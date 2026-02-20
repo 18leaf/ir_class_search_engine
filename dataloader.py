@@ -2,6 +2,8 @@ from pathlib import Path
 
 class Document:
     uri: str
+    # doc_id from hash of the uri string
+    doc_id: int
     path: Path
     title: str
     raw_content: str
@@ -25,6 +27,7 @@ class Document:
     def __init__(self, raw_file_path: Path):
         url, title, raw_content = Document._parse_file(raw_file_path)
         self.uri = url
+        self.doc_id = hash(url)
         self.title = title
         self.raw_content = raw_content
         self.path = raw_file_path
@@ -50,3 +53,6 @@ class DataLoader:
             # remove file from docs to lad
             self.docs_to_load.remove(file)
             self.raw_documents.append(file_document)
+
+    def get_documents(self) -> list[Document]:
+        return self.raw_documents
