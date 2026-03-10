@@ -121,3 +121,61 @@ class Indexer:
             processed_toks.append(word)
 
         return processed_toks
+
+class Postings:
+    # mapping of vocabulary->ids, ids->vocabulary
+    # uses a HashMap -> Do not have to worry about expanding terms (static input data, no resizing cost)
+    # only stores term (actual term not id) -> sorted_list of tuples by doc_id (doc_id, freq)
+    term_to_id: dict[str, int]
+    id_to_term: dict[int, str]
+    postings: dict[str, list[tuple[int, int]]]
+    vocab: np.ndarray
+    avgdl: float
+    num_docs: int
+
+    def __init__(
+        self,
+        postings: dict[str, list[tuple[int, int]]],
+        term_to_id: dict[str, int],
+        id_to_term: dict[int, str],
+        vocab: np.ndarray,
+        avgdl: float,
+        num_docs: int,
+    ):
+        self.postings = postings
+        self.term_to_id = term_to_id
+        self.id_to_term = id_to_term
+        self.vocab = vocab
+        self.avgdl = avgdl
+        self.num_docs = num_docs
+
+    @classmethod
+    def from_doc_term_list(
+        cls,
+        doc_term_list: dict[int, list[str]],
+        term_to_id: dict[str, int],
+        id_to_term: dict[int, str],
+        vocab: np.ndarray,
+        avgdl: float,
+        num_docs: int,
+    ):
+        # initialize empty postings list, remember tuple is doc_id, freq
+        postings: dict[str, list[tuple[int, int]]] = {}
+
+        # doc_term_list should already be sorted
+        for doc_id in sorted(doc_term_list.keys()):
+            term_counts = Counter(doc_term_list[doc_id])
+
+            for term, freq in term_counts.items():
+                if term not in postings:
+                    postings[term] = []
+                postings[term].append((doc_id, freq))
+
+        return cls(
+            postings=postings,
+            term_to_id=term_to_id,
+            id_to_term=id_to_term,
+            vocab=vocab,
+            avgdl=avgdl,
+            num_docs=num_docs,
+        )
