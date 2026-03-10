@@ -1,0 +1,123 @@
+from collections import Counter
+from dataloader import Document
+import numpy as np
+import re
+
+from nltk.stem import WordNetLemmatizer as wnl
+import nltk
+from nltk.corpus import stopwords
+
+# download stopwords and lemmatize wordnet if not alread exists
+nltk.download('stopwords')
+nltk.download('wordnet')
+STOPWORDS = set(stopwords.words('english'))
+
+class Indexer:
+    corpus: list[Document]
+    # doc_id -> [processed words in their position) = cleaned words in document
+    processed_docs: dict[int, list[str]]
+    vocab: np.ndarray  # make this an array of all words + their frequencies
+    # after vocab
+    doc_term_matrix: np.ndarray | None  # numpy, where each row = a document, each column = idx of preproc token, each cell has occurences in that document row
+
+    avgdl: float
+    # this is basically the postings
+    doc_term_list: dict[int, list[str]]
+    term_to_id: dict[str, int]
+    id_to_term: dict[int, str]
+
+    def __init__(self, documents: list[Document]):
+        # sort by doc id for deterministic ordering
+        documents.sort(key=lambda x: x.doc_id)
+        self.doc_term_list: dict[int, list[str]] = {}
+        self.processed_docs: dict[int, list[str]] = self.doc_term_list
+
+        self.term_to_id: dict[str, int] = {}
+        self.id_to_term: dict[int, str] = {}
+
+        self.vocab: np.ndarray = np.array([], dtype=object)
+        self.doc_term_matrix: np.ndarray | None = None
+
+        self.avgdl = 0.0
+        self.corpus = documents
+
+    def preprocess(self):
+        total = len(self.corpus)
+        attempts = 0
+        # initialize a mutable vocab list using collection counter
+        # at each iteration, expand the counts from that doc that was preprocessed
+        vocab_counter = Counter()
+        doc_lengths = []
+        for doc in self.corpus:
+            # preprocess doc
+            doc_id = doc.doc_id
+            raw_text = doc.raw_content
+            raw_tokens = Indexer._raw_tokens(raw_text)
+            processed_toks = Indexer._nltk_processing(raw_tokens)
+            # insert into doc_term_list
+            self.doc_term_list[doc_id] = processed_toks
+            vocab_counter.update(processed_toks)
+            doc_lengths.append(len(processed_toks))
+            attempts += 1
+
+        # create a dual mapping of term_id -> term, term -> term_id
+        # optionally, prefer lower memory size items for higher frequency terms in the future, ignore for now
+        sorted_terms = [
+            term for term, _ in sorted(
+                vocab_counter.items(),
+                key=lambda item: (-item[1], item[0])
+            )
+        ]
+        self.term_to_id = {term: idx for idx, term in enumerate(sorted_terms)}
+        self.id_to_term = {idx: term for term, idx in self.term_to_id.items()}
+    
+        # construct vocab, such that higher freq terms have lower ids (not doing anything with it)
+        # but can use encodings for postings later
+        self.vocab = np.array(
+            [(term, vocab_counter[term]) for term in sorted_terms],
+            dtype=object
+        )
+
+        # construct doc-term matrix ... essentially the postings matrix (term pos is lost, only freq)
+        num_docs = len(self.corpus)
+        num_terms = len(sorted_terms)
+
+        self.doc_term_matrix = np.zeros((num_docs, num_terms), dtype=np.int32)
+
+        for row_idx, doc in enumerate(self.corpus):
+            doc_id = doc.doc_id
+            term_counts = Counter(self.doc_term_list[doc_id])
+
+            for term, count in term_counts.items():
+                col_idx = self.term_to_id[term]
+                self.doc_term_matrix[row_idx, col_idx] = count
+
+        # acg document length
+        self.avgdl = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 0.0
+        
+        print(f"Processed: {attempts}\nOut of: {total}")
+
+    @staticmethod
+    def _raw_tokens(raw_text: str) -> list[str]:
+        # lowercase+remove
+        raw_text = raw_text.lower()
+        text = re.sub(r"[^a-z\s]+", " ", raw_text)
+        # strip extra whitespace
+        text = re.sub(r"\s+", " ", text).strip()
+        return text.split()
+
+    # remove stopwords, lemmatize word
+    @staticmethod
+    def _nltk_processing(raw_toks: list[str]) -> list[str]:
+        # remove stopwords
+        processed_toks = []
+        # initialize once
+        lemmatizer = wnl()
+        for word in raw_toks:
+            # lemmatizer eith lemmatizers or returns orgiinl
+            if word in STOPWORDS:
+                continue
+            word = lemmatizer.lemmatize(word)
+            processed_toks.append(word)
+
+        return processed_toks
