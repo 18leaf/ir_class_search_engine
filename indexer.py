@@ -1,7 +1,11 @@
+from __future__ import annotations # type annotations for loading/saving from files
 from collections import Counter
 from dataloader import Document
 import numpy as np
 import re
+import pickle
+from pathlib import Path
+
 
 from nltk.stem import WordNetLemmatizer as wnl
 import nltk
@@ -25,6 +29,8 @@ class Indexer:
     doc_term_list: dict[int, list[str]]
     term_to_id: dict[str, int]
     id_to_term: dict[int, str]
+    is_indexed: bool
+    postings: Postings | None
 
     def __init__(self, documents: list[Document]):
         # sort by doc id for deterministic ordering
@@ -40,6 +46,37 @@ class Indexer:
 
         self.avgdl = 0.0
         self.corpus = documents
+        self.is_indexed = False
+        self.postings = None
+
+    def construct_postings(self) -> Postings | None:
+        if not self.is_indexed:
+            print("Not Ready Yet... Not preprocessed")
+            return None
+
+        # create mapping of id to uri 
+        doc_id_to_uri = {doc.doc_id: doc.uri for doc in self.corpus}
+        
+        self.postings = Postings.from_doc_term_list(
+            doc_term_list=self.doc_term_list,
+            term_to_id=self.term_to_id,
+            id_to_term=self.id_to_term,
+            vocab=self.vocab,
+            avgdl=self.avgdl,
+            num_docs=len(self.corpus),
+            doc_id_to_uri=doc_id_to_uri
+        )
+
+        return self.postings
+
+    def save_index(self, path: str) -> None:
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load_index(cls, path: str) -> "Indexer":
+        with open(path, "rb") as f:
+            return pickle.load(f)       
 
     def preprocess(self):
         total = len(self.corpus)
@@ -94,7 +131,8 @@ class Indexer:
 
         # acg document length
         self.avgdl = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 0.0
-        
+
+        self.is_indexed = True
         print(f"Processed: {attempts}\nOut of: {total}")
 
     @staticmethod
@@ -132,6 +170,9 @@ class Postings:
     vocab: np.ndarray
     avgdl: float
     num_docs: int
+    # support BM25 discrete doc-length. not only avg
+    doc_lengths: dict[int, int]
+    doc_id_to_uri: dict[int, str]
 
     def __init__(
         self,
@@ -141,6 +182,8 @@ class Postings:
         vocab: np.ndarray,
         avgdl: float,
         num_docs: int,
+        doc_lengths: dict[int, int],
+        doc_id_to_uri: dict[int, str],
     ):
         self.postings = postings
         self.term_to_id = term_to_id
@@ -148,6 +191,8 @@ class Postings:
         self.vocab = vocab
         self.avgdl = avgdl
         self.num_docs = num_docs
+        self.doc_lengths = doc_lengths
+        self.doc_id_to_uri = doc_id_to_uri
 
     @classmethod
     def from_doc_term_list(
@@ -158,13 +203,19 @@ class Postings:
         vocab: np.ndarray,
         avgdl: float,
         num_docs: int,
+        doc_id_to_uri: dict[int, str]
     ):
         # initialize empty postings list, remember tuple is doc_id, freq
         postings: dict[str, list[tuple[int, int]]] = {}
+        doc_lengths: dict[int, int] = {}
 
         # doc_term_list should already be sorted
         for doc_id in sorted(doc_term_list.keys()):
+            # for raw tokens/counting doc lengt @ doc level
+            tokens = doc_term_list[doc_id]
             term_counts = Counter(doc_term_list[doc_id])
+            doc_lengths[doc_id] = len(tokens)
+            
 
             for term, freq in term_counts.items():
                 if term not in postings:
@@ -178,4 +229,15 @@ class Postings:
             vocab=vocab,
             avgdl=avgdl,
             num_docs=num_docs,
+            doc_lengths=doc_lengths,
+            doc_id_to_uri = doc_id_to_uri
         )
+
+    def save_postings(self, path: str) -> None:
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load_postings(cls, path: str) -> "Postings":
+        with open(path, "rb") as f:
+            return pickle.load(f)
