@@ -4,7 +4,6 @@ from dataloader import Document
 import numpy as np
 import re
 import pickle
-from pathlib import Path
 
 
 from nltk.stem import WordNetLemmatizer as wnl
@@ -69,14 +68,6 @@ class Indexer:
 
         return self.postings
 
-    def save_index(self, path: str) -> None:
-        with open(path, "wb") as f:
-            pickle.dump(self, f)
-
-    @classmethod
-    def load_index(cls, path: str) -> "Indexer":
-        with open(path, "rb") as f:
-            return pickle.load(f)       
 
     def preprocess(self):
         total = len(self.corpus)
@@ -233,6 +224,11 @@ class Postings:
             doc_id_to_uri = doc_id_to_uri
         )
 
+    
+    def get_uri(self, doc_id: int) -> str | None:
+        # helper to get url from matches
+        return self.doc_id_to_uri[doc_id]
+        
     def save_postings(self, path: str) -> None:
         with open(path, "wb") as f:
             pickle.dump(self, f)
