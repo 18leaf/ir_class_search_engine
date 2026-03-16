@@ -1,12 +1,21 @@
-from dataloader import DataLoader
 from pathlib import Path
+
+from dataloader import DataLoader
+from indexer import Indexer
+from search_agents import SearchAgent
 
 
 def main():
-    print("Hello from a2!")
     dl = DataLoader(Path("./data"))
-    # begin loading data into Documents
     dl.start()
+
+    indexer = Indexer(dl.get_documents())
+    indexer.preprocess()
+    indexer.construct_postings()
+
+    agent = SearchAgent(indexer=indexer)
+
+    agent.compare_models("bm25")
 
 
 if __name__ == "__main__":

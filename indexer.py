@@ -157,6 +157,7 @@ class Postings:
     # only stores term (actual term not id) -> sorted_list of tuples by doc_id (doc_id, freq)
     term_to_id: dict[str, int]
     id_to_term: dict[int, str]
+    # postings = {"id": {(doc_id, freq)}}
     postings: dict[str, list[tuple[int, int]]]
     vocab: np.ndarray
     avgdl: float
